@@ -1,0 +1,3 @@
+A place to store license files for this project.  You will need licenses for Esri ArcGIS for Server and ArcGIS Portal for this project.  The process to obtain and convert these to .ecp fields can be found in the complete guide in the documents directory.  THese files will eventually need to be uploaded to an S3 bucket as descirbed in the full docuemtnation.  
+
+Note that this folder is empty as I cannot share my own licenses with you.  

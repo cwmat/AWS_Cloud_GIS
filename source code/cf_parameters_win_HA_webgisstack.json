@@ -1,0 +1,22 @@
+{
+    "RegionId": "us-east-1",
+    "TemplateUrl": "http://arcgisstore1041.s3.amazonaws.com/5686/templates/arcgis-webgis-ha-windows.template",
+    "StackName": "csc90-web-gis-final",
+    "ASInstanceType": "m3.large",
+    "AZs": "us-east-1c, us-east-1d",
+	"BDSInstances": "0",
+	"BDSInstanceType": "m3.large",
+    "DeploymentBucket": "deployment-bucket-03281990",
+    "DriveSizeData": "100",
+    "DriveSizeRoot": "100",
+	"FSInstanceType": "m3.large",
+    "KeyName": "ec2hu",
+    "PortalLicenseFile": "authorize_portal.ecp",
+	"RunAsUserPassword": "ArcGISp@ssword",
+    "ServerLicenseFile": "authorize_server.ecp",
+    "SiteAdmin": "admin",
+    "SiteAdminPassword": "******",
+    "SiteDomain": "cwmatgisdev.com",
+    "SSLCertificateFile": "cwmatgisdev.com.pfx",
+    "SSLCertPassword": "*******"
+}

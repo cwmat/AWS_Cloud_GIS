@@ -1,0 +1,1208 @@
+{
+  "AWSTemplateFormatVersion" : "2010-09-09",
+  "Description" : "Highly available configuration of ArcGIS Portal, Server, and DataStore (Windows)",
+  "Mappings" : {
+    "RegionMap" : {
+      "ap-northeast-1": {
+        "en": "ami-33fe1352"
+      },
+      "ap-northeast-2": {
+        "en": "ami-2ece0540"
+      },
+      "ap-southeast-1": {
+        "en": "ami-453ced26"
+      },
+      "ap-southeast-2": {
+        "en": "ami-dd4967be"
+      },
+      "eu-central-1": {
+        "en": "ami-0cd53a63"
+      },
+      "eu-west-1": {
+        "en": "ami-57c85824"
+      },
+      "sa-east-1": {
+        "en": "ami-2d870c41"
+      },
+      "us-east-1": {
+        "en": "ami-0b788966"
+      },
+      "us-west-1": {
+        "en": "ami-e9b4cf89"
+      },
+      "us-west-2": {
+        "en": "ami-defc05be"
+      },
+      "ap-south-1": {
+        "en": "ami-d6147eb9"
+      }
+    }
+  },
+  "Parameters" : {
+    "AZs" : {
+      "Type" : "List<AWS::EC2::AvailabilityZone::Name>",
+      "Description" : "Select two availability zones for your VPC subnets"
+    },
+    "DeploymentBucket" : {
+      "Description" : "S3 bucket with authorization files and SSL certificates",
+      "Type" : "String",
+      "AllowedPattern" : "[a-zA-Z][0-9a-zA-Z-_.]{2,62}",
+      "ConstraintDescription" : "S3 bucket name must be between 3 and 63 characters and and must start with a letter."
+    },
+    "DriveSizeRoot" : {
+      "Default" : "100",
+      "Description" : "The size of the C: Drive in GB.",
+      "Type" : "Number",
+      "MinValue" : "100",
+      "MaxValue" : "1024",
+      "ConstraintDescription" : "Must be between 100 and 1024 GB."
+    },
+    "DriveSizeData" : {
+      "Default" : "100",
+      "Description" : "The size of the D: Drive in GB.",
+      "Type" : "Number",
+      "MinValue" : "10",
+      "MaxValue" : "1024",
+      "ConstraintDescription" : "Must be between 10 and 1024 GB."
+    },
+    "FSInstanceType": {
+      "Description": "The file server EC2 instance type",
+      "Type": "String",
+      "AllowedValues": [
+        "m3.large", "m3.xlarge", "m3.2xlarge",
+        "m4.large", "m4.xlarge", "m4.2xlarge", "m4.4xlarge", "m4.10xlarge",
+        "c4.large", "c4.xlarge", "c4.2xlarge", "c4.4xlarge", "c4.8xlarge",
+        "c3.large", "c3.xlarge", "c3.2xlarge", "c3.4xlarge", "c3.8xlarge",
+        "r3.large", "r3.xlarge", "r3.2xlarge", "r3.4xlarge", "r3.8xlarge"
+      ],
+      "Default": "m3.large",
+      "ConstraintDescription" : "Only C3, C4, M3, and R3 instance types are supported"
+    },
+    "ASInstanceType": {
+      "Description": "The Web GIS EC2 instance type",
+        "Type": "String",
+        "AllowedValues": [
+          "m3.large", "m3.xlarge", "m3.2xlarge",
+          "m4.large", "m4.xlarge", "m4.2xlarge", "m4.4xlarge", "m4.10xlarge",
+          "c4.large", "c4.xlarge", "c4.2xlarge", "c4.4xlarge", "c4.8xlarge",
+          "c3.large", "c3.xlarge", "c3.2xlarge", "c3.4xlarge", "c3.8xlarge",
+          "r3.large", "r3.xlarge", "r3.2xlarge", "r3.4xlarge", "r3.8xlarge"
+        ],
+        "Default": "m3.large"
+    },
+    "BDSInstanceType": {
+      "Description": "Spatio-temporal Big Data Store EC2 instance type",
+        "Type": "String",
+        "AllowedValues": [
+          "m3.large", "m3.xlarge", "m3.2xlarge",
+          "m4.large", "m4.xlarge", "m4.2xlarge", "m4.4xlarge", "m4.10xlarge",
+          "c4.large", "c4.xlarge", "c4.2xlarge", "c4.4xlarge", "c4.8xlarge",
+          "c3.large", "c3.xlarge", "c3.2xlarge", "c3.4xlarge", "c3.8xlarge",
+          "r3.large", "r3.xlarge", "r3.2xlarge", "r3.4xlarge", "r3.8xlarge"
+        ],
+        "Default": "m3.large"
+    },
+    "BDSInstances" : {
+      "Description" : "Number of spatio-temporal Big Data Store EC2 instances",
+      "Type" : "Number",
+      "Default" : "0"
+    },
+    "KeyName" : {
+      "Description" : "EC2 Key Pair to allow RemoteDesktop access to the instances",
+      "Type" : "AWS::EC2::KeyPair::KeyName"
+    },
+    "ServerLicenseFile": {
+      "Description": "ArcGIS for Server authorization file (must be uploaded to DeploymentBucket)",
+      "Type": "String",
+      "AllowedPattern": "[^\"]{1,1024}",
+      "ConstraintDescription": "S3 object key name must be between 1 and 1024 characters."
+    },
+    "PortalLicenseFile": {
+      "Description": "Portal for ArcGIS authorization file (must be uploaded to DeploymentBucket)",
+      "Type": "String",
+      "AllowedPattern": "[^\"]{1,1024}",
+      "ConstraintDescription": "S3 object key name must be between 1 and 1024 characters."
+    },
+    "SiteAdmin": {
+      "Description": "User name for ArcGIS Server site admin and Portal initial administrator accounts",
+      "Type": "String",
+      "Default": "admin",
+      "AllowedPattern": "[0-9a-zA-Z.]{4,24}",
+      "ConstraintDescription": "User name must be between 4 and 24 characters and can only contain digits 0 through 9, ASCII letters A through Z (uppercase and lowercase), and a dot (.)."
+    },
+    "SiteAdminPassword": {
+      "Description": "Password for ArcGIS Server site admin and Portal initial admin accounts",
+      "Type": "String",
+      "NoEcho": "true",
+      "AllowedPattern": "[0-9a-zA-Z.]{4,24}",
+      "ConstraintDescription": "Password must be between 4 and 24 characters and can only contain digits 0 through 9, ASCII letters A through Z (uppercase and lowercase), and a dot (.)."
+    },
+    "RunAsUserPassword" : {
+      "Description" : "Password for ArcGIS account",
+      "Type" : "String",
+      "NoEcho" : "true",
+      "AllowedPattern": "(?=^[^\\\"]{8,}$)(?=.*\\d)(?=.*[!@#$%^&*]+)(?![.\\n])(?=.*[A-Z])(?=.*[a-z]).*$",
+      "ConstraintDescription": "Password must be at least eight characters in length and must contain characters from three of the following four categories: English uppercase characters (A through Z), English lowercase characters (a through z), digits (0 through 9), non-alphabetic characters (!, $, #, %). Password must not contain backslashes (\\) or quotation marks (\")."
+    },
+    "SiteDomain": {
+      "Description": "The domain name of your ArcGIS site",
+      "Type": "String",
+      "AllowedPattern": "[^\\\"]{1,253}",
+      "ConstraintDescription": "The domain name is invalid."
+    },
+    "SSLCertificateFile": {
+      "Description": "SSL certificate file issued to the site domain (must be uploaded to DeploymentBucket)",
+      "Type": "String",
+      "AllowedPattern": "[^\\\"]{1,1024}",
+      "ConstraintDescription": "S3 object key name must be between 1 and 1024 characters."
+    },
+    "SSLCertPassword": {
+      "Description": "SSL certificate file password",
+      "Type": "String",
+      "NoEcho": "true",
+      "AllowedPattern": "[^\\\"]{1,128}",
+      "ConstraintDescription": "Password must be between 1 and 128 characters and must not contain backslashes (\\) or quotation marks (\")."
+    }
+  },
+  "Resources" : {
+    "VPC" : {
+      "Type" : "AWS::EC2::VPC",
+      "Properties" : {
+        "CidrBlock" : "10.0.0.0/16",
+        "Tags" : [ {
+          "Key" : "Name",
+          "Value" : {"Ref" : "AWS::StackName"}
+        }, {
+          "Key" : "Application",
+          "Value" : "arcgis-webgis-ha-windows"
+        }, {
+          "Key" : "Network",
+          "Value" : "Public"
+        } ]
+      }
+    },
+    "Subnet1" : {
+      "Type" : "AWS::EC2::Subnet",
+      "Properties" : {
+        "VpcId" : {"Ref" : "VPC"},
+        "CidrBlock" : "10.0.0.0/24",
+        "AvailabilityZone" : {"Fn::Select" : [ 0, {"Ref" : "AZs"} ]},
+        "Tags" : [ {
+          "Key" : "Name", 
+          "Value" : {"Fn::Join" : ["", [{"Ref" : "AWS::StackName"}, "-subnet1"]]}
+        }, {
+          "Key" : "Application",
+          "Value" : "arcgis-webgis-ha-windows"
+        }, {
+          "Key" : "Network",
+          "Value" : "Public"
+        } ]
+      }
+    },
+    "Subnet2" : {
+      "Type" : "AWS::EC2::Subnet",
+      "Properties" : {
+        "VpcId" : {"Ref" : "VPC"},
+        "CidrBlock" : "10.0.1.0/24",
+        "AvailabilityZone" : {"Fn::Select" : [ 1, {"Ref" : "AZs"} ]},
+        "Tags" : [ {
+          "Key" : "Name", 
+          "Value" : {"Fn::Join" : ["", [{"Ref" : "AWS::StackName"}, "-subnet2"]]}
+        }, {
+          "Key" : "Application",
+          "Value" : "arcgis-webgis-ha-windows"
+        }, {
+          "Key" : "Network",
+          "Value" : "Public"
+        } ]
+      }
+    },
+    "InternetGateway" : {
+      "Type" : "AWS::EC2::InternetGateway",
+      "Properties" : {
+        "Tags" : [ {
+          "Key" : "Application",
+          "Value" : {"Ref" : "AWS::StackName"}
+        }, {
+          "Key" : "Network",
+          "Value" : "Public"
+        } ]
+      }
+    },
+    "AttachGateway" : {
+      "Type" : "AWS::EC2::VPCGatewayAttachment",
+      "Properties" : {
+        "VpcId" : {"Ref" : "VPC"},
+        "InternetGatewayId" : {"Ref" : "InternetGateway"}
+      }
+    },
+    "RouteTable" : {
+      "Type" : "AWS::EC2::RouteTable",
+      "Properties" : {
+        "VpcId" : {"Ref" : "VPC"},
+        "Tags" : [ {
+          "Key" : "Application",
+          "Value" : {"Ref" : "AWS::StackName"}
+        }, {
+          "Key" : "Network",
+          "Value" : "Public"
+        } ]
+      }
+    },
+    "Route" : {
+      "Type" : "AWS::EC2::Route",
+      "DependsOn" : "AttachGateway",
+      "Properties" : {
+        "RouteTableId" : {"Ref" : "RouteTable"},
+        "DestinationCidrBlock" : "0.0.0.0/0",
+        "GatewayId" : {"Ref" : "InternetGateway"}
+      }
+    },
+    "Subnet1RouteTableAssociation" : {
+      "Type" : "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties" : {
+        "SubnetId" : {"Ref" : "Subnet1"},
+        "RouteTableId" : {"Ref" : "RouteTable"}
+      }
+    },
+    "Subnet2RouteTableAssociation" : {
+      "Type" : "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties" : {
+        "SubnetId" : {"Ref" : "Subnet2"},
+        "RouteTableId" : {"Ref" : "RouteTable"}
+      }
+    },
+    "SecurityGroup" : {
+      "Type" : "AWS::EC2::SecurityGroup",
+      "Properties" : {
+        "GroupDescription" : {"Ref" : "AWS::StackName"},
+        "VpcId" : {"Ref" : "VPC"},
+        "SecurityGroupIngress" : [ {
+          "IpProtocol" : "tcp",
+          "FromPort" : "80",
+          "ToPort" : "80",
+          "CidrIp" : "0.0.0.0/0"
+        }, {
+          "IpProtocol" : "tcp",
+          "FromPort" : "443",
+          "ToPort" : "443",
+          "CidrIp" : "0.0.0.0/0"
+        } ]
+      }
+    },
+    "SecurityGroupIngress" : {
+      "Type" : "AWS::EC2::SecurityGroupIngress",
+      "Properties" : {
+        "GroupId" : {"Ref" : "SecurityGroup"},
+        "IpProtocol" : "tcp",
+        "FromPort" : "0",
+        "ToPort" : "65535",
+        "SourceSecurityGroupId" : {"Ref" : "SecurityGroup"}
+      }
+    },
+    "ELB" : {
+      "Type" : "AWS::ElasticLoadBalancing::LoadBalancer",
+      "DependsOn" : "AttachGateway",
+      "Properties" : {
+        "Subnets" : [ {"Ref" : "Subnet1"}, {"Ref" : "Subnet2"} ],
+        "SecurityGroups" : [ {"Ref" : "SecurityGroup"} ],
+        "Scheme" : "internet-facing",
+        "Listeners" : [ {
+          "LoadBalancerPort" : "80",
+          "InstancePort" : "80",
+          "Protocol" : "HTTP"
+        }, {
+          "LoadBalancerPort" : "443",
+          "InstancePort" : "443",
+          "Protocol" : "TCP",
+          "InstanceProtocol" : "TCP"
+        } ],
+        "HealthCheck" : {
+          "Target" : "HTTP:80/server/rest/info/healthcheck",
+          "HealthyThreshold" : "3",
+          "UnhealthyThreshold" : "5",
+          "Interval" : "30",
+          "Timeout" : "5"
+        },
+        "Instances" : [{"Ref" : "PrimaryServerEC2Instance"}, {"Ref" : "SecondaryServerEC2Instance"}]
+      }
+    },
+    "IAMRole" : {
+      "Type" : "AWS::IAM::Role",
+      "Properties" : {
+        "AssumeRolePolicyDocument" : {
+          "Statement" : [ {
+            "Effect" : "Allow",
+            "Principal" : {
+              "Service" : [ "ec2.amazonaws.com" ]
+            },
+            "Action" : [ "sts:AssumeRole" ]
+          } ]
+        },
+        "Path" : "/"
+      }
+    },
+    "IAMPolicy" : {
+      "Type" : "AWS::IAM::Policy",
+      "Properties" : {
+        "PolicyName" : "IAMRole",
+        "PolicyDocument" : {
+          "Statement" : [ {
+            "Action" : [ "s3:*", "cloudformation:*", "logs:*" ],
+            "Effect" : "Allow",
+            "Resource" : "*"
+          } ]
+        },
+        "Roles" : [ {
+          "Ref" : "IAMRole"
+        } ]
+      }
+    },
+    "IAMInstanceProfile" : {
+      "Type" : "AWS::IAM::InstanceProfile",
+      "Properties" : {
+        "Path" : "/",
+        "Roles" : [ {
+          "Ref" : "IAMRole"
+        } ]
+      }
+    },
+    "FileServerEC2Instance" : {
+      "Type" : "AWS::EC2::Instance",
+      "DependsOn" : "AttachGateway",
+      "Properties" : {
+        "ImageId" : {"Fn::FindInMap" : ["RegionMap", {"Ref":"AWS::Region"}, "en"]},
+        "InstanceType" : {"Ref":"FSInstanceType"},
+        "KeyName" : {"Ref":"KeyName"},
+        "IamInstanceProfile" : {"Ref":"IAMInstanceProfile"},
+        "Monitoring" : true,
+        "BlockDeviceMappings": [ {
+          "DeviceName": "/dev/sda1",
+          "Ebs": {
+            "VolumeSize": {"Ref": "DriveSizeRoot"},
+            "DeleteOnTermination": true,
+            "VolumeType": "gp2"
+          }
+        }, {
+          "DeviceName": "xvdg",
+          "Ebs": {
+            "VolumeSize": {"Ref": "DriveSizeData"},
+            "DeleteOnTermination": true,
+            "VolumeType": "gp2"
+          }
+        },
+        {"DeviceName": "xvdca", "NoDevice": {}}, {"DeviceName": "xvdcb", "NoDevice": {}},
+        {"DeviceName": "xvdcc", "NoDevice": {}}, {"DeviceName": "xvdcd", "NoDevice": {}},
+        {"DeviceName": "xvdce", "NoDevice": {}}, {"DeviceName": "xvdcf", "NoDevice": {}},
+        {"DeviceName": "xvdcg", "NoDevice": {}}, {"DeviceName": "xvdch", "NoDevice": {}},
+        {"DeviceName": "xvdci", "NoDevice": {}}, {"DeviceName": "xvdcj", "NoDevice": {}},
+        {"DeviceName": "xvdck", "NoDevice": {}}, {"DeviceName": "xvdcl", "NoDevice": {}},
+        {"DeviceName": "xvdcm", "NoDevice": {}}, {"DeviceName": "xvdcn", "NoDevice": {}},
+        {"DeviceName": "xvdco", "NoDevice": {}}, {"DeviceName": "xvdcp", "NoDevice": {}},
+        {"DeviceName": "xvdcq", "NoDevice": {}}, {"DeviceName": "xvdcr", "NoDevice": {}},
+        {"DeviceName": "xvdcs", "NoDevice": {}}, {"DeviceName": "xvdct", "NoDevice": {}},
+        {"DeviceName": "xvdcu", "NoDevice": {}}, {"DeviceName": "xvdcv", "NoDevice": {}},
+        {"DeviceName": "xvdcw", "NoDevice": {}}, {"DeviceName": "xvdcx", "NoDevice": {}},
+        {"DeviceName": "xvdcy", "NoDevice": {}}, {"DeviceName": "xvdcz", "NoDevice": {}}],
+        "Tags" : [{
+          "Key" : "Name", 
+          "Value" : {"Fn::Join" : ["", [{"Ref" : "AWS::StackName"}, "-fileserver"]]}
+        }],
+        "NetworkInterfaces" : [{
+          "PrivateIpAddress" : "10.0.0.4",
+          "GroupSet" : [{"Ref" : "SecurityGroup"}],
+          "AssociatePublicIpAddress" : "true",
+          "DeviceIndex" : "0",
+          "DeleteOnTermination" : "true",
+          "SubnetId" : {"Ref" : "Subnet1"}}],
+        "UserData" : {
+          "Fn::Base64" : {
+            "Fn::Join" : [
+              "",
+              [
+                "<powershell>\r\n",
+                "try \r\n",
+                "{  \r\n",
+                "  $stackName   = '", {"Ref" : "AWS::StackName"}, "' \r\n",
+                "  $region      = '", {"Ref" : "AWS::Region"}, "' \r\n",
+                "  $waitHandle  = '", {"Ref" : "FileServerWaitHandle"}, "' \r\n",
+                "  $setupScript = 'C:\\chef\\scripts\\esriVMSetup.ps1' \r\n",
+                "  $InstanceName = 'FileServerEC2Instance' \r\n",
+                "  $NodeJSONPath = 'C:\\\\chef\\\\node.json' \r\n",
+                "  $ChefLogFile  = 'C:\\\\chef\\\\chef-run.log' \r\n",
+                "  $execName = \"cfn-init\" \r\n",
+                "  $execArgs = \"-v -s $stackName -r CloudWatchSettings --region $region\" \r\n",
+                "  Write-Output \"Executing : $execName\" \r\n",
+                "  Write-Output \"Arguments : $execArgs\"  \r\n",
+                "  $process = Start-Process $execName -PassThru -Wait -ArgumentList $execArgs.Split(' ') \r\n",
+                "  if ($process.ExitCode -ne 0) { \r\n",
+                "    throw \"Process 'cfn-init' exit code : $($process.ExitCode)\"   \r\n",
+                "  } \r\n",
+                " \r\n",
+                "  . \"$setupScript\" -n 'EC2UserScriptTask' -s $stackName -r $region -w $waitHandle -i $InstanceName -j $NodeJSONPath -l $ChefLogFile \r\n",
+                "   \r\n",
+                "  Write-Output \"UserScript : completed\"  \r\n",
+                "}   \r\n",
+                "catch  \r\n",
+                "{  \r\n",
+                "  Write-Output \"ERROR: $($_.Exception.Message)\"  \r\n",
+                "  cfn-signal -e 1  -r \"$($_.Exception.Message)\" \"$WaitHandle\"  \r\n",
+                "}  \r\n",
+                "</powershell>\r\n"
+              ]
+            ]
+          }
+        }
+      },
+      "Metadata" : {
+        "AWS::CloudFormation::Authentication" : {
+          "S3AccessCreds" : {
+            "type" : "S3",
+            "buckets" : [ {"Ref" : "DeploymentBucket"} ],
+            "roleName" : {"Ref" : "IAMRole" }
+          }
+        },
+        "AWS::CloudFormation::Init" : {
+          "config" : {
+            "files" : {
+              "C:\\Temp\\server_license.ecp" : {
+                "source" : {"Fn::Join" : [ "", [ "https://", {"Ref" : "DeploymentBucket"}, ".s3.amazonaws.com/", {"Ref" : "ServerLicenseFile"}]]},
+                "authentication" : "S3AccessCreds"
+              },
+              "C:\\chef\\node.json" : {
+                "content" : {
+                  "Fn::Join" : ["", [
+                  "{\r\n",
+                  "  \"arcgis\" : {\r\n",
+                  "    \"version\" : \"10.4.1\",\r\n",
+                  "    \"run_as_password\" : \"", {"Ref" : "RunAsUserPassword"}, "\",\r\n",
+                  "    \"server\" : {\r\n",
+                  "      \"local_directories_root\" : \"D:\\\\arcgisserver\",\r\n",
+                  "      \"directories_root\" : \"\\\\\\\\10.0.0.4\\\\arcgisserver\"\r\n",
+                  "    },\r\n",
+                  "    \"data_store\" : {\r\n",
+                  "      \"local_backup_dir\" : \"D:\\\\data\\\\arcgisdatastore\\\\backup\",\r\n",
+                  "      \"backup_dir\" : \"\\\\\\\\10.0.0.4\\\\data\\\\arcgisdatastore\\\\backup\"\r\n",
+                  "    },\r\n",
+                  "    \"portal\" : {\r\n",
+                  "      \"local_content_dir\" : \"D:\\\\data\\\\arcgisportal\\\\content\",\r\n",
+                  "      \"content_dir\" : \"\\\\\\\\10.0.0.4\\\\data\\\\arcgisportal\\\\content\"\r\n",
+                  "    }\r\n",
+                  "  },\r\n",
+                  "  \"run_list\" : [\n",
+                  "    \"recipe[arcgis::system]\",\r\n",
+                  "    \"recipe[arcgis::fileserver]\"]\r\n",
+                  "}\r\n"]]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "FileServerRecoveryAlarm" : {
+      "Type" : "AWS::CloudWatch::Alarm",
+      "Properties" : {
+        "AlarmDescription" : "Trigger a recovery when instance status check fails for 5 consecutive minutes.",
+        "MetricName" : "StatusCheckFailed_System",
+        "Namespace" : "AWS/EC2",
+        "Statistic" : "Minimum",
+        "Period" : "60",
+        "EvaluationPeriods" : "5",
+        "Threshold" : "0",
+        "ComparisonOperator" : "GreaterThanThreshold",
+        "AlarmActions" : [ {"Fn::Join" : ["", ["arn:aws:automate:", { "Ref" : "AWS::Region" }, ":ec2:recover" ]]} ],
+        "Dimensions" : [ {
+          "Name" : "InstanceId",
+          "Value" : {"Ref" : "FileServerEC2Instance"}
+        } ]
+      }
+    },
+    "FileServerWaitHandle" : {
+      "Type" : "AWS::CloudFormation::WaitConditionHandle",
+      "Properties" : {}
+    },
+    "FileServerWaitCondition" : {
+      "Type" : "AWS::CloudFormation::WaitCondition",
+      "Properties" : {
+        "Count" : "1",
+        "Handle" : {"Ref" : "FileServerWaitHandle"},
+        "Timeout" : "7200"
+      }
+    },
+    "PrimaryServerEC2Instance" : {
+      "Type" : "AWS::EC2::Instance",
+      "DependsOn" : "FileServerWaitCondition",
+      "Properties" : {
+        "ImageId" : {"Fn::FindInMap" : ["RegionMap", {"Ref":"AWS::Region"}, "en"]},
+        "InstanceType" : {"Ref":"ASInstanceType"},
+        "KeyName" : {"Ref":"KeyName"},
+        "IamInstanceProfile" : {"Ref":"IAMInstanceProfile"},
+        "Monitoring" : true,
+        "BlockDeviceMappings": [ {
+          "DeviceName": "/dev/sda1",
+          "Ebs": {
+            "VolumeSize": {"Ref": "DriveSizeRoot"},
+            "DeleteOnTermination": true,
+            "VolumeType": "gp2"
+          }
+        }, {
+          "DeviceName": "xvdg",
+          "Ebs": {
+            "VolumeSize": {"Ref": "DriveSizeData"},
+            "DeleteOnTermination": true,
+            "VolumeType": "gp2"
+          }
+        },
+        {"DeviceName": "xvdca", "NoDevice": {}}, {"DeviceName": "xvdcb", "NoDevice": {}},
+        {"DeviceName": "xvdcc", "NoDevice": {}}, {"DeviceName": "xvdcd", "NoDevice": {}},
+        {"DeviceName": "xvdce", "NoDevice": {}}, {"DeviceName": "xvdcf", "NoDevice": {}},
+        {"DeviceName": "xvdcg", "NoDevice": {}}, {"DeviceName": "xvdch", "NoDevice": {}},
+        {"DeviceName": "xvdci", "NoDevice": {}}, {"DeviceName": "xvdcj", "NoDevice": {}},
+        {"DeviceName": "xvdck", "NoDevice": {}}, {"DeviceName": "xvdcl", "NoDevice": {}},
+        {"DeviceName": "xvdcm", "NoDevice": {}}, {"DeviceName": "xvdcn", "NoDevice": {}},
+        {"DeviceName": "xvdco", "NoDevice": {}}, {"DeviceName": "xvdcp", "NoDevice": {}},
+        {"DeviceName": "xvdcq", "NoDevice": {}}, {"DeviceName": "xvdcr", "NoDevice": {}},
+        {"DeviceName": "xvdcs", "NoDevice": {}}, {"DeviceName": "xvdct", "NoDevice": {}},
+        {"DeviceName": "xvdcu", "NoDevice": {}}, {"DeviceName": "xvdcv", "NoDevice": {}},
+        {"DeviceName": "xvdcw", "NoDevice": {}}, {"DeviceName": "xvdcx", "NoDevice": {}},
+        {"DeviceName": "xvdcy", "NoDevice": {}}, {"DeviceName": "xvdcz", "NoDevice": {}}],
+        "Tags" : [{"Key" : "Name", "Value" : {"Fn::Join" : ["", [{"Ref" : "AWS::StackName"}, "-primary"]]}}],
+        "NetworkInterfaces" : [{
+          "PrivateIpAddress" : "10.0.0.5",
+          "GroupSet" : [{"Ref" : "SecurityGroup"}],
+          "AssociatePublicIpAddress" : "true",
+          "DeviceIndex" : "0",
+          "DeleteOnTermination" : "true",
+          "SubnetId" : {"Ref" : "Subnet1"}}],
+        "UserData" : {
+          "Fn::Base64" : {
+            "Fn::Join" : [
+              "",
+              [
+                "<powershell>\r\n",
+                "try \r\n",
+                "{  \r\n",
+                "  $stackName   = '", {"Ref" : "AWS::StackName"}, "' \r\n",
+                "  $region      = '", {"Ref" : "AWS::Region"}, "' \r\n",
+                "  $waitHandle  = '", {"Ref" : "PrimaryServerWaitHandle"}, "' \r\n",
+                "  $setupScript = 'C:\\chef\\scripts\\esriVMSetup.ps1' \r\n",
+                "  $InstanceName = 'PrimaryServerEC2Instance' \r\n",
+                "  $NodeJSONPath = 'C:\\\\chef\\\\node.json' \r\n",
+                "  $ChefLogFile  = 'C:\\\\chef\\\\chef-run.log' \r\n",
+                "  $execName = \"cfn-init\" \r\n",
+                "  $execArgs = \"-v -s $stackName -r CloudWatchSettings --region $region\" \r\n",
+                "  Write-Output \"Executing : $execName\" \r\n",
+                "  Write-Output \"Arguments : $execArgs\"  \r\n",
+                "  $process = Start-Process $execName -PassThru -Wait -ArgumentList $execArgs.Split(' ') \r\n",
+                "  if ($process.ExitCode -ne 0) { \r\n",
+                "    throw \"Process 'cfn-init' exit code : $($process.ExitCode)\"   \r\n",
+                "  } \r\n",
+                " \r\n",
+                "  . \"$setupScript\" -n 'EC2UserScriptTask' -s $stackName -r $region -w $waitHandle -i $InstanceName -j $NodeJSONPath -l $ChefLogFile \r\n",
+                "   \r\n",
+                "  Write-Output \"UserScript : completed\"  \r\n",
+                "}   \r\n",
+                "catch  \r\n",
+                "{  \r\n",
+                "  Write-Output \"ERROR: $($_.Exception.Message)\"  \r\n",
+                "  cfn-signal -e 1  -r \"$($_.Exception.Message)\" \"$WaitHandle\"  \r\n",
+                "}  \r\n",
+                "</powershell>\r\n"
+              ]
+            ]
+          }
+        }
+      },
+      "Metadata" : {
+        "AWS::CloudFormation::Authentication" : {
+          "S3AccessCreds" : {
+            "type" : "S3",
+            "buckets" : [ {
+              "Ref" : "DeploymentBucket"
+            } ],
+            "roleName" : {
+              "Ref" : "IAMRole"
+            }
+          }
+        },
+        "AWS::CloudFormation::Init" : {
+          "config" : {
+            "commands": {
+              "rename-server-license" : {
+                "command": {"Fn::Join": ["", ["move C:\\Temp\\server_license.tmp C:\\Temp\\", {"Ref": "ServerLicenseFile"}]]}
+              },
+              "rename-portal-license" : {
+                "command": {"Fn::Join": ["", ["move C:\\Temp\\portal_license.tmp C:\\Temp\\", {"Ref": "PortalLicenseFile"}]]}
+              }
+            },
+            "files" : {
+              "C:\\Temp\\server_license.tmp": {
+                "source" : {"Fn::Join": ["", ["https://", {"Ref": "DeploymentBucket"}, ".s3.amazonaws.com/", {"Ref": "ServerLicenseFile"}]]},
+                "authentication" : "S3AccessCreds"
+              },
+              "C:\\Temp\\portal_license.tmp": {
+                "source" : {"Fn::Join": ["", ["https://", {"Ref": "DeploymentBucket"}, ".s3.amazonaws.com/", {"Ref": "PortalLicenseFile"}]]},
+                "authentication" : "S3AccessCreds"
+              },
+              "C:\\Temp\\keystore.pfx": {
+                "source": {"Fn::Join": [ "", [ "https://", {"Ref": "DeploymentBucket"}, ".s3.amazonaws.com/", {"Ref": "SSLCertificateFile"} ] ]},
+                "authentication": "S3AccessCreds"
+              },
+              "C:\\chef\\node.json" : {
+                "content" : {
+                  "Fn::Join" : ["", [
+                  "{\r\n",
+                  "  \"arcgis\" : {\r\n",
+                  "    \"version\" : \"10.4.1\",\r\n",
+                  "    \"run_as_password\" : \"", {"Ref" : "RunAsUserPassword"}, "\",\r\n",
+                  "    \"hosts\" : {\r\n",
+                  "      \"", {"Ref": "SiteDomain"}, "\" : \"10.0.0.5\"\r\n",
+                  "    },\r\n",
+                  "    \"iis\" : {\r\n",
+                  "      \"keystore_file\" : \"C:\\\\Temp\\\\keystore.pfx\",\r\n",
+                  "      \"keystore_password\" : \"", {"Ref": "SSLCertPassword"}, "\"\r\n",
+                  "    },\r\n",
+                  "    \"server\" : {\r\n",
+                  "      \"domain_name\" : \"", {"Ref": "SiteDomain"}, "\",\r\n",
+                  "      \"keystore_file\" : \"C:\\\\Temp\\\\keystore.pfx\",\r\n",
+                  "      \"keystore_password\" : \"", {"Ref": "SSLCertPassword"}, "\",\r\n",
+                  "      \"admin_username\" : \"", {"Ref" : "SiteAdmin"}, "\",\r\n",
+                  "      \"admin_password\" : \"", {"Ref" : "SiteAdminPassword" }, "\",\r\n",
+                  "      \"authorization_file\" : \"C:\\\\Temp\\\\", {"Ref": "ServerLicenseFile"}, "\",\r\n",
+                  "      \"directories_root\" : \"\\\\\\\\10.0.0.4\"\r\n",
+                  "    },\r\n",
+                  "    \"data_store\" : {\r\n",
+                  "      \"preferredidentifier\" : \"ip\",\r\n",
+                  "      \"data_dir\" : \"D:\\\\arcgisdatastore\",\r\n",
+                  "      \"backup_dir\" : \"\\\\\\\\10.0.0.4\\\\data\\\\arcgisdatastore\\\\backup\"\r\n",
+                  "    },\r\n",
+                  "    \"portal\" : {\r\n",
+                  "      \"domain_name\" : \"", {"Ref": "SiteDomain"}, "\",\r\n",
+                  "      \"keystore_file\" : \"C:\\\\Temp\\\\keystore.pfx\",\r\n",
+                  "      \"keystore_password\" : \"", {"Ref": "SSLCertPassword"}, "\",\r\n",
+                  "      \"private_url\" : \"https://", {"Ref": "SiteDomain"}, "/portal\",\r\n",
+                  "      \"web_context_url\" : \"https://", {"Ref": "SiteDomain"}, "/portal\",\r\n",
+                  "      \"admin_username\" : \"", {"Ref": "SiteAdmin"}, "\",\r\n",
+                  "      \"admin_password\" : \"", {"Ref": "SiteAdminPassword"}, "\",\r\n",
+                  "      \"data_dir\" : \"D:\\\\arcgisportal\",\r\n",
+                  "      \"content_dir\" : \"\\\\\\\\10.0.0.4\\\\data\\\\arcgisportal\\\\content\",\r\n",
+                  "      \"authorization_file\" : \"C:\\\\Temp\\\\", {"Ref": "PortalLicenseFile"}, "\"\r\n",
+                  "    },\r\n",
+                  "    \"web_adaptor\" : {\r\n",
+                  "      \"admin_access\" : true\r\n",
+                  "    }\r\n",
+                  "  },\r\n",
+                  "  \"run_list\" : [\r\n",
+                  "    \"recipe[arcgis::system]\",\r\n",
+                  "    \"recipe[arcgis::iis]\",\r\n",
+                  "    \"recipe[arcgis::server]\",\r\n",
+                  "    \"recipe[arcgis::server_wa]\",\r\n",
+                  "    \"recipe[arcgis::datastore]\",\r\n",
+                  "    \"recipe[arcgis::portal]\",\r\n",
+                  "    \"recipe[arcgis::portal_wa]\"]\r\n",
+                  "}\r\n"]]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "PrimaryServerRecoveryAlarm" : {
+      "Type" : "AWS::CloudWatch::Alarm",
+      "Properties" : {
+        "AlarmDescription" : "Trigger a recovery when instance status check fails for 5 consecutive minutes.",
+        "MetricName" : "StatusCheckFailed_System",
+        "Namespace" : "AWS/EC2",
+        "Statistic" : "Minimum",
+        "Period" : "60",
+        "EvaluationPeriods" : "5",
+        "Threshold" : "0",
+        "ComparisonOperator" : "GreaterThanThreshold",
+        "AlarmActions" : [ {"Fn::Join" : ["", ["arn:aws:automate:", { "Ref" : "AWS::Region" }, ":ec2:recover" ]]} ],
+        "Dimensions" : [ {
+          "Name" : "InstanceId",
+          "Value" : {"Ref" : "PrimaryServerEC2Instance"}
+        } ]
+      }
+    },
+    "PrimaryServerWaitHandle" : {
+      "Type" : "AWS::CloudFormation::WaitConditionHandle",
+      "Properties" : {}
+    },
+    "PrimaryServerWaitCondition" : {
+      "Type" : "AWS::CloudFormation::WaitCondition",
+      "Properties" : {
+        "Count" : "1",
+        "Handle" : {"Ref" : "PrimaryServerWaitHandle"},
+        "Timeout" : "7200"
+      }
+    },
+    "SecondaryServerEC2Instance" : {
+      "Type" : "AWS::EC2::Instance",
+      "DependsOn" : "PrimaryServerWaitCondition",
+      "Properties" : {
+        "ImageId" : {"Fn::FindInMap" : ["RegionMap", {"Ref":"AWS::Region"}, "en"]},
+        "InstanceType" : {"Ref":"ASInstanceType"},
+        "KeyName" : {"Ref":"KeyName"},
+        "IamInstanceProfile" : {"Ref":"IAMInstanceProfile"},
+        "Monitoring" : true,
+        "BlockDeviceMappings": [ {
+          "DeviceName": "/dev/sda1",
+          "Ebs": {
+            "VolumeSize": {"Ref": "DriveSizeRoot"},
+            "DeleteOnTermination": true,
+            "VolumeType": "gp2"
+          }
+        }, {
+          "DeviceName": "xvdg",
+          "Ebs": {
+            "VolumeSize": {"Ref": "DriveSizeData"},
+            "DeleteOnTermination": true,
+            "VolumeType": "gp2"
+          }
+        },
+        {"DeviceName": "xvdca", "NoDevice": {}}, {"DeviceName": "xvdcb", "NoDevice": {}},
+        {"DeviceName": "xvdcc", "NoDevice": {}}, {"DeviceName": "xvdcd", "NoDevice": {}},
+        {"DeviceName": "xvdce", "NoDevice": {}}, {"DeviceName": "xvdcf", "NoDevice": {}},
+        {"DeviceName": "xvdcg", "NoDevice": {}}, {"DeviceName": "xvdch", "NoDevice": {}},
+        {"DeviceName": "xvdci", "NoDevice": {}}, {"DeviceName": "xvdcj", "NoDevice": {}},
+        {"DeviceName": "xvdck", "NoDevice": {}}, {"DeviceName": "xvdcl", "NoDevice": {}},
+        {"DeviceName": "xvdcm", "NoDevice": {}}, {"DeviceName": "xvdcn", "NoDevice": {}},
+        {"DeviceName": "xvdco", "NoDevice": {}}, {"DeviceName": "xvdcp", "NoDevice": {}},
+        {"DeviceName": "xvdcq", "NoDevice": {}}, {"DeviceName": "xvdcr", "NoDevice": {}},
+        {"DeviceName": "xvdcs", "NoDevice": {}}, {"DeviceName": "xvdct", "NoDevice": {}},
+        {"DeviceName": "xvdcu", "NoDevice": {}}, {"DeviceName": "xvdcv", "NoDevice": {}},
+        {"DeviceName": "xvdcw", "NoDevice": {}}, {"DeviceName": "xvdcx", "NoDevice": {}},
+        {"DeviceName": "xvdcy", "NoDevice": {}}, {"DeviceName": "xvdcz", "NoDevice": {}}],
+        "Tags" : [{"Key" : "Name", "Value" : {"Fn::Join" : ["", [{"Ref" : "AWS::StackName"}, "-secondary"]]}}],
+        "NetworkInterfaces" : [{
+          "PrivateIpAddress" : "10.0.1.5",
+          "GroupSet" : [{"Ref" : "SecurityGroup"}],
+          "AssociatePublicIpAddress" : "true",
+          "DeviceIndex" : "0",
+          "DeleteOnTermination" : "true",
+          "SubnetId" : {"Ref" : "Subnet2"}}],
+        "UserData" : {
+          "Fn::Base64" : {
+            "Fn::Join" : [
+              "",
+              [
+                "<powershell>\r\n",
+                "try \r\n",
+                "{  \r\n",
+                "  $stackName   = '", {"Ref" : "AWS::StackName"}, "' \r\n",
+                "  $region      = '", {"Ref" : "AWS::Region"}, "' \r\n",
+                "  $waitHandle  = '", {"Ref" : "SecondaryServerWaitHandle"}, "' \r\n",
+                "  $setupScript = 'C:\\chef\\scripts\\esriVMSetup.ps1' \r\n",
+                "  $InstanceName = 'SecondaryServerEC2Instance' \r\n",
+                "  $NodeJSONPath = 'C:\\\\chef\\\\node.json' \r\n",
+                "  $ChefLogFile  = 'C:\\\\chef\\\\chef-run.log' \r\n",
+                "  $execName = \"cfn-init\" \r\n",
+                "  $execArgs = \"-v -s $stackName -r CloudWatchSettings --region $region\" \r\n",
+                "  Write-Output \"Executing : $execName\" \r\n",
+                "  Write-Output \"Arguments : $execArgs\"  \r\n",
+                "  $process = Start-Process $execName -PassThru -Wait -ArgumentList $execArgs.Split(' ') \r\n",
+                "  if ($process.ExitCode -ne 0) { \r\n",
+                "    throw \"Process 'cfn-init' exit code : $($process.ExitCode)\"   \r\n",
+                "  } \r\n",
+                " \r\n",
+                "  . \"$setupScript\" -n 'EC2UserScriptTask' -s $stackName -r $region -w $waitHandle -i $InstanceName -j $NodeJSONPath -l $ChefLogFile \r\n",
+                "   \r\n",
+                "  Write-Output \"UserScript : completed\"  \r\n",
+                "}   \r\n",
+                "catch  \r\n",
+                "{  \r\n",
+                "  Write-Output \"ERROR: $($_.Exception.Message)\"  \r\n",
+                "  cfn-signal -e 1  -r \"$($_.Exception.Message)\" \"$WaitHandle\"  \r\n",
+                "}  \r\n",
+                "</powershell>\r\n"
+              ]
+            ]
+          }
+        }
+      },
+      "Metadata" : {
+        "AWS::CloudFormation::Authentication" : {
+          "S3AccessCreds" : {
+            "type" : "S3",
+            "buckets" : [ {
+              "Ref" : "DeploymentBucket"
+            } ],
+            "roleName" : {
+              "Ref" : "IAMRole"
+            }
+          }
+        },
+        "AWS::CloudFormation::Init" : {
+          "config" : {
+            "commands": {
+              "rename-server-license" : {
+                "command": {"Fn::Join": ["", ["move C:\\Temp\\server_license.tmp C:\\Temp\\", {"Ref": "ServerLicenseFile"}]]}
+              },
+              "rename-portal-license" : {
+                "command": {"Fn::Join": ["", ["move C:\\Temp\\portal_license.tmp C:\\Temp\\", {"Ref": "PortalLicenseFile"}]]}
+              }
+            },
+            "files" : {
+              "C:\\Temp\\server_license.tmp": {
+                "source" : {"Fn::Join": ["", ["https://", {"Ref": "DeploymentBucket"}, ".s3.amazonaws.com/", {"Ref": "ServerLicenseFile"}]]},
+                "authentication" : "S3AccessCreds"
+              },
+              "C:\\Temp\\portal_license.tmp": {
+                "source" : {"Fn::Join": ["", ["https://", {"Ref": "DeploymentBucket"}, ".s3.amazonaws.com/", {"Ref": "PortalLicenseFile"}]]},
+                "authentication" : "S3AccessCreds"
+              },
+              "C:\\Temp\\keystore.pfx": {
+                "source": {"Fn::Join": [ "", [ "https://", {"Ref": "DeploymentBucket"}, ".s3.amazonaws.com/", {"Ref": "SSLCertificateFile"} ] ]},
+                "authentication": "S3AccessCreds"
+              },
+              "C:\\chef\\node.json" : {
+                "content" : {
+                  "Fn::Join" : ["", [
+                  "{\r\n",
+                  "  \"arcgis\" : {\r\n",
+                  "    \"version\" : \"10.4.1\",\r\n",
+                  "    \"run_as_password\" : \"", {"Ref" : "RunAsUserPassword"}, "\",\r\n",
+                  "    \"hosts\" : {\r\n",
+                  "      \"", {"Ref": "SiteDomain"}, "\" : \"10.0.1.5\"\r\n",
+                  "    },\r\n",
+                  "    \"iis\" : {\r\n",
+                  "      \"keystore_file\" : \"C:\\\\Temp\\\\keystore.pfx\",\r\n",
+                  "      \"keystore_password\" : \"", {"Ref": "SSLCertPassword"}, "\"\r\n",
+                  "    },\r\n",
+                  "    \"server\" : {\r\n",
+                  "      \"domain_name\" : \"", {"Ref": "SiteDomain"}, "\",\r\n",
+                  "      \"keystore_file\" : \"C:\\\\Temp\\\\keystore.pfx\",\r\n",
+                  "      \"keystore_password\" : \"", {"Ref": "SSLCertPassword"}, "\",\r\n",
+                  "      \"admin_username\" : \"", {"Ref" : "SiteAdmin"}, "\",\r\n",
+                  "      \"admin_password\" : \"", {"Ref" : "SiteAdminPassword" }, "\",\r\n",
+                  "      \"authorization_file\" : \"C:\\\\Temp\\\\", {"Ref": "ServerLicenseFile"}, "\",\r\n",
+                  "      \"primary_server_url\" : \"https://10.0.0.5:6443/arcgis\"\r\n",
+                  "    },\r\n",
+                  "    \"data_store\" : {\r\n",
+                  "      \"preferredidentifier\" : \"ip\",\r\n",
+                  "      \"data_dir\" : \"D:\\\\arcgisdatastore\",\r\n",
+                  "      \"backup_dir\" : \"\\\\\\\\10.0.0.4\\\\data\\\\arcgisdatastore\\\\backup\"\r\n",
+                  "    },\r\n",
+                  "    \"portal\" : {\r\n",
+                  "      \"domain_name\" : \"", {"Ref": "SiteDomain"}, "\",\r\n",
+                  "      \"primary_machine_url\" : \"https://10.0.0.5:7443\",\r\n",
+                  "      \"private_url\" : \"https://", {"Ref": "SiteDomain"}, "/portal\",\r\n",
+                  "      \"web_context_url\" : \"https://", {"Ref": "SiteDomain"}, "/portal\",\r\n",
+                  "      \"admin_username\" : \"", {"Ref": "SiteAdmin"}, "\",\r\n",
+                  "      \"admin_password\" : \"", {"Ref": "SiteAdminPassword"}, "\",\r\n",
+                  "      \"authorization_file\" : \"C:\\\\Temp\\\\", {"Ref": "PortalLicenseFile"}, "\"\r\n",
+                  "    },\r\n",
+                  "    \"web_adaptor\" : {\r\n",
+                  "      \"admin_access\" : true\r\n",
+                  "    }\r\n",
+                  "  },\r\n",
+                  "  \"run_list\" : [\n",
+                  "    \"recipe[arcgis::system]\",\r\n",
+                  "    \"recipe[arcgis::iis]\",\r\n",
+                  "    \"recipe[arcgis::server_node]\",\r\n",
+                  "    \"recipe[arcgis::server_wa]\",\r\n",
+                  "    \"recipe[arcgis::datastore_standby]\",\r\n",
+                  "    \"recipe[arcgis::portal_standby]\",\r\n",
+                  "    \"recipe[arcgis::portal_wa]\",\r\n",
+                  "    \"recipe[arcgis::federation]\"]\r\n",
+                  "}\r\n"]]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "SecondaryServerRecoveryAlarm" : {
+      "Type" : "AWS::CloudWatch::Alarm",
+      "Properties" : {
+        "AlarmDescription" : "Trigger a recovery when instance status check fails for 5 consecutive minutes.",
+        "MetricName" : "StatusCheckFailed_System",
+        "Namespace" : "AWS/EC2",
+        "Statistic" : "Minimum",
+        "Period" : "60",
+        "EvaluationPeriods" : "5",
+        "Threshold" : "0",
+        "ComparisonOperator" : "GreaterThanThreshold",
+        "AlarmActions" : [ {"Fn::Join" : ["", ["arn:aws:automate:", { "Ref" : "AWS::Region" }, ":ec2:recover" ]]} ],
+        "Dimensions" : [ {
+          "Name" : "InstanceId",
+          "Value" : {"Ref" : "SecondaryServerEC2Instance"}
+        } ]
+      }
+    },
+    "SecondaryServerWaitHandle" : {
+      "Type" : "AWS::CloudFormation::WaitConditionHandle",
+      "Properties" : {}
+    },
+    "SecondaryServerWaitCondition" : {
+      "Type" : "AWS::CloudFormation::WaitCondition",
+      "Properties" : {
+        "Count" : "1",
+        "Handle" : {"Ref" : "SecondaryServerWaitHandle"},
+        "Timeout" : "10800"
+      }
+    },
+    "LaunchConfig" : {
+      "Type" : "AWS::AutoScaling::LaunchConfiguration",
+      "DependsOn" : "SecondaryServerWaitCondition",
+      "Properties" : {
+        "AssociatePublicIpAddress" : true,
+        "ImageId" : {"Fn::FindInMap" : ["RegionMap", {"Ref":"AWS::Region"}, "en"]},
+        "InstanceType" : {"Ref" : "BDSInstanceType"},
+        "KeyName" : {"Ref" : "KeyName"},
+        "IamInstanceProfile" : {"Ref" : "IAMInstanceProfile"},
+        "SecurityGroups" : [ {"Ref" : "SecurityGroup"} ],
+        "InstanceMonitoring" : true,
+        "BlockDeviceMappings": [ {
+          "DeviceName": "/dev/sda1",
+          "Ebs": {
+            "VolumeSize": {"Ref": "DriveSizeRoot"},
+            "DeleteOnTermination": true,
+            "VolumeType": "gp2"
+          }
+        }, {
+          "DeviceName": "xvdg",
+          "Ebs": {
+            "VolumeSize": {"Ref": "DriveSizeData"},
+            "DeleteOnTermination": true,
+            "VolumeType": "gp2"
+          }
+        }],
+        "UserData" : {
+          "Fn::Base64" : {
+            "Fn::Join" : [
+              "",
+              [
+                "<powershell>\r\n",
+                "try\r\n",
+                "{\r\n",
+                "  $stackName   = '", {"Ref" : "AWS::StackName"}, "'\r\n",
+                "  $region      = '", {"Ref" : "AWS::Region"}, "'\r\n",
+                "  $waitHandle  = '", {"Ref" : "AutoScalingGroupWaitHandle"}, "'\r\n",
+                "  $setupScript = 'C:\\chef\\scripts\\esriVMSetup.ps1'\r\n",
+                "  $InstanceName = 'LaunchConfig'\r\n",
+                "  $NodeJSONPath = 'C:\\\\chef\\\\node.json'\r\n",
+                "  $ChefLogFile  = 'C:\\\\chef\\\\chef-run.log'\r\n",
+                "  $execName = \"cfn-init\"\r\n",
+                "  $execArgs = \"-v -s $stackName -r CloudWatchSettings --region $region\"\r\n",
+                "  Write-Output \"Executing : $execName\"\r\n",
+                "  Write-Output \"Arguments : $execArgs\"\r\n",
+                "  $process = Start-Process $execName -PassThru -Wait -ArgumentList $execArgs.Split(' ')\r\n",
+                "  if ($process.ExitCode -ne 0) {\r\n",
+                "    throw \"Process 'cfn-init' exit code : $($process.ExitCode)\"\r\n",
+                "  }\r\n",
+                "\r\n",
+                "  . \"$setupScript\" -n 'EC2UserScriptTask' -s $stackName -r $region -w $waitHandle -i $InstanceName -j $NodeJSONPath -l $ChefLogFile\r\n",
+                "\r\n",
+                "  Write-Output \"UserScript : completed\"\r\n",
+                "}\r\n",
+                "catch\r\n",
+                "{\r\n",
+                "  Write-Output \"ERROR: $($_.Exception.Message)\"\r\n",
+                "  cfn-signal -e 1  -r \"$($_.Exception.Message)\" \"$WaitHandle\"\r\n",
+                "}\r\n",
+                "</powershell>\r\n"
+              ]
+            ]
+          }
+        }
+      },
+      "Metadata" : {
+        "AWS::CloudFormation::Authentication" : {
+          "S3AccessCreds" : {
+            "type" : "S3",
+            "buckets" : [ {"Ref" : "DeploymentBucket"} ],
+            "roleName" : {"Ref" : "IAMRole"}
+          }
+        },
+        "AWS::CloudFormation::Init" : {
+          "config" : {
+            "files" : {
+              "C:\\chef\\node.json" : {
+                "content" : {
+                  "Fn::Join" : [ "", [
+                    "{\r\n",
+                    "  \"arcgis\" : {\r\n",
+                    "    \"version\" : \"10.4.1\",\r\n",
+                    "    \"run_as_password\" : \"", {"Ref" : "RunAsUserPassword"}, "\",\r\n",
+                    "    \"server\" : {\r\n",
+                    "      \"admin_username\" : \"", {"Ref" : "SiteAdmin"}, "\",\r\n",
+                    "      \"admin_password\" : \"", {"Ref" : "SiteAdminPassword" }, "\",\r\n",
+                    "      \"private_url\" : \"https://10.0.0.5:6443/arcgis\"\r\n",
+                    "    },\r\n",
+                    "    \"data_store\" : {\r\n",
+                    "      \"types\" : \"spatiotemporal\",\r\n",
+                    "      \"preferredidentifier\" : \"ip\",\r\n",
+                    "      \"data_dir\" : \"D:\\\\arcgisdatastore\",\r\n",
+                    "      \"backup_dir\" : \"\\\\\\\\10.0.0.4\\\\data\\\\arcgisdatastore\\\\backup\"\r\n",
+                    "    }\r\n",
+                    "  },\r\n",
+                    "  \"run_list\" : [\r\n",
+                    "    \"recipe[arcgis::datastore]\"]\r\n",
+                    "}\r\n" ] ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "AutoScalingGroup" : {
+      "Type" : "AWS::AutoScaling::AutoScalingGroup",
+      "Properties" : {
+        "VPCZoneIdentifier" : [ {"Ref" : "Subnet1"}, {"Ref" : "Subnet2"} ],
+        "Cooldown" : "300",
+        "MaxSize" : {"Ref" : "BDSInstances"},
+        "MinSize" : {"Ref" : "BDSInstances"},
+        "LaunchConfigurationName" : {"Ref" : "LaunchConfig"},
+        "HealthCheckType" : "EC2",
+        "HealthCheckGracePeriod" : "3600",
+        "Tags" : [ {
+          "Key" : "Name",
+          "Value" : {"Fn::Join" : ["", [{"Ref" : "AWS::StackName"}, "-bds"]]},
+          "PropagateAtLaunch" : true
+        } ]
+      }
+    },
+    "AutoScalingGroupWaitHandle" : {
+      "Type" : "AWS::CloudFormation::WaitConditionHandle",
+      "Properties" : {}
+    },
+    "AutoScalingGroupWaitCondition" : {
+      "Type" : "AWS::CloudFormation::WaitCondition",
+      "DependsOn" : "LaunchConfig",
+      "Properties" : {
+        "Count" : {"Ref" : "BDSInstances"},
+        "Handle" : {"Ref" : "AutoScalingGroupWaitHandle"},
+        "Timeout" : "7200"
+      }
+    },
+    "DeploymentLogs": {
+      "Type": "AWS::Logs::LogGroup",
+      "DeletionPolicy" : "Retain",
+      "Properties": {
+        "RetentionInDays": 7
+      }
+    },
+    "CloudWatchSettings" : {
+      "Type" : "AWS::Logs::MetricFilter",
+      "DeletionPolicy" : "Retain",
+      "Properties": {
+        "LogGroupName": {"Ref": "DeploymentLogs"},
+        "FilterPattern": "[level=FATAL, message]",
+        "MetricTransformations": [{
+           "MetricValue": "1",
+           "MetricNamespace": "ArcGIS/Deployment",
+           "MetricName": "ErrorCount"
+        }]
+      },
+      "Metadata" : {
+        "AWS::CloudFormation::Init" : {
+          "config" : {
+            "sources" : {
+              "C:\\chef" : "https://arcgisstore1041.s3.amazonaws.com/5686/cookbooks/arcgis-2.2.1-cookbooks.zip"
+            },
+            "files" : {
+              "C:\\Program Files\\Amazon\\Ec2ConfigService\\Settings\\AWS.EC2.Windows.CloudWatch.json" : {
+                "content" : {
+                  "Fn::Join" : ["", [
+                  "{\r\n",
+                  "  \"EngineConfiguration\": {\r\n",
+                  "    \"PollInterval\": \"00:00:15\",\r\n",
+                  "    \"Components\": [\r\n",
+                  "    {\r\n",
+                  "      \"Id\": \"CfnInitLogStream\",\r\n",
+                  "      \"FullName\": \"AWS.EC2.Windows.CloudWatch.CloudWatchLogsOutput,AWS.EC2.Windows.CloudWatch\",\r\n",
+                  "      \"Parameters\": {\r\n",
+                  "        \"Region\": \"", {"Ref" : "AWS::Region"}, "\",\r\n",
+                  "        \"LogGroup\": \"", {"Ref": "DeploymentLogs"}, "\",\r\n",
+                  "        \"LogStream\": \"{instance_id}/cfn-init.log\"\r\n",
+                  "      }\r\n",
+                  "    },\r\n",
+                  "    {\r\n",
+                  "      \"Id\": \"ChefRunLogStream\",\r\n",
+                  "      \"FullName\": \"AWS.EC2.Windows.CloudWatch.CloudWatchLogsOutput,AWS.EC2.Windows.CloudWatch\",\r\n",
+                  "      \"Parameters\": {\r\n",
+                  "        \"Region\": \"", {"Ref" : "AWS::Region"}, "\",\r\n",
+                  "        \"LogGroup\": \"", {"Ref": "DeploymentLogs"}, "\",\r\n",
+                  "        \"LogStream\": \"{instance_id}/chef-run.log\"\r\n",
+                  "      }\r\n",
+                  "    },\r\n",
+                  "    {\r\n",
+                  "      \"Id\": \"CfnInitLogs\",\r\n",
+                  "      \"FullName\": \"AWS.EC2.Windows.CloudWatch.CustomLog.CustomLogInputComponent,AWS.EC2.Windows.CloudWatch\",\r\n",
+                  "      \"Parameters\": {\r\n",
+                  "        \"LogDirectoryPath\": \"C:\\\\cfn\\\\log\",\r\n",
+                  "        \"TimestampFormat\": \"yyyy-MM-dd HH:mm:ss,fff\",\r\n",
+                  "        \"Encoding\": \"UTF-8\",\r\n",
+                  "        \"Filter\": \"cfn-init.log\",\r\n",
+                  "        \"CultureName\": \"en-US\",\r\n",
+                  "        \"TimeZoneKind\": \"Local\",\r\n",
+                  "        \"LineCount\": \"1\"\r\n",
+                  "      }\r\n",
+                  "    },\r\n",
+                  "    {\r\n",
+                  "      \"Id\": \"ChefRunLogs\",\r\n",
+                  "      \"FullName\": \"AWS.EC2.Windows.CloudWatch.CustomLog.CustomLogInputComponent,AWS.EC2.Windows.CloudWatch\",\r\n",
+                  "      \"Parameters\": {\r\n",
+                  "        \"LogDirectoryPath\": \"C:\\\\chef\",\r\n",
+                  "        \"TimestampFormat\": \"[yyyy-MM-ddTHH:mm:sszzz]\",\r\n",
+                  "        \"Encoding\": \"UTF-8\",\r\n",
+                  "        \"Filter\": \"chef-run.log\",\r\n",
+                  "        \"CultureName\": \"en-US\",\r\n",
+                  "        \"TimeZoneKind\": \"Local\",\r\n",
+                  "        \"LineCount\": \"1\"\r\n",
+                  "      }\r\n",
+                  "    }],\r\n",
+                  "    \"Flows\": {\r\n",
+                  "      \"Flows\":[\"CfnInitLogs,CfnInitLogStream\",\"ChefRunLogs,ChefRunLogStream\"]\r\n",
+                  "    }\r\n",
+                  "  }\r\n",
+                  "}\r\n"]]
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "Outputs" : {
+    "ManagerURL" : {
+      "Value" : {"Fn::Join" : [ "", [ "https://", {"Ref" : "SiteDomain"}, "/server/manager" ]]},
+      "Description" : "ArcGIS Server Manager URL"
+    },
+    "RestURL" : {
+      "Value" : {"Fn::Join" : [ "", [ "https://", {"Ref" : "SiteDomain"}, "/server/rest" ]]},
+      "Description" : "ArcGIS REST Services Directory URL"
+    },
+    "PortalURL": {
+      "Value": {"Fn::Join": ["", ["https://", {"Ref" : "SiteDomain"}, "/portal/home" ]]},
+      "Description": "Portal for ArcGIS Home URL"
+    },
+    "LogsURL" : {
+      "Value" : {"Fn::Join" : [ "", [ "https://console.aws.amazon.com/cloudwatch/home?region=", {"Ref" : "AWS::Region"}, "#logStream:group=", {"Ref" : "DeploymentLogs"}]]},
+      "Description" : "Deployment Logs"
+    },
+    "VPCId" : {
+      "Description" : "VPC ID",
+      "Value" :  {"Ref" : "VPC"}
+    },
+    "SecurityGroup" : {
+      "Description" : "Security group ID",
+      "Value" :  {"Fn::GetAtt" : ["SecurityGroup", "GroupId"]}
+    },
+    "DNSName" : {
+      "Description" : "Elastic load balancer DNS name",
+      "Value" :  {"Fn::GetAtt" : ["ELB", "DNSName"]}
+    },
+    "RouteTable" : {
+      "Description" : "Route table",
+      "Value" :  {"Ref" : "RouteTable"}
+    }
+  }
+}
